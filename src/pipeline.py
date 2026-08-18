@@ -2,16 +2,42 @@ from __future__ import annotations
 
 """Production RAG Pipeline — Bài tập NHÓM: ghép M1+M2+M3+M4."""
 
-import os, sys, time
+import json, os, subprocess, sys, tempfile, time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.m1_chunking import load_documents, chunk_hierarchical
 from src.m2_search import HybridSearch
-from src.m3_rerank import CrossEncoderReranker
+from src.m3_rerank import CrossEncoderReranker, RerankResult
 from src.m4_eval import load_test_set, evaluate_ragas, failure_analysis, save_report
 from src.m5_enrichment import enrich_chunks
 from config import RERANK_TOP_K, EVAL_SAMPLE_SIZE
+
+
+def _rerank_isolated(query: str, documents: list[dict], top_k: int) -> list[RerankResult]:
+    """Run CrossEncoder rerank in a subprocess.
+
+    ⚠️ Loading CrossEncoder in the same process as SentenceTransformer (used by DenseSearch)
+    causes a native segfault on this machine (OpenMP/torch runtime conflict). Isolating the
+    rerank step in its own process avoids it.
+    """
+    if not documents:
+        return []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        in_path = os.path.join(tmpdir, "in.json")
+        out_path = os.path.join(tmpdir, "out.json")
+        with open(in_path, "w", encoding="utf-8") as f:
+            json.dump({"query": query, "documents": documents, "top_k": top_k}, f, ensure_ascii=False)
+
+        env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE", "PYTHONIOENCODING": "utf-8"}
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        subprocess.run(
+            [sys.executable, "-m", "src._rerank_worker", in_path, out_path],
+            cwd=repo_root, env=env, check=True,
+        )
+        with open(out_path, encoding="utf-8") as f:
+            raw = json.load(f)
+    return [RerankResult(**item) for item in raw]
 
 
 def build_pipeline():
@@ -61,7 +87,7 @@ def run_query(query: str, search: HybridSearch, reranker: CrossEncoderReranker) 
     """Run single query through pipeline."""
     results = search.search(query)
     docs = [{"text": r.text, "score": r.score, "metadata": r.metadata} for r in results]
-    reranked = reranker.rerank(query, docs, top_k=RERANK_TOP_K)
+    reranked = _rerank_isolated(query, docs, RERANK_TOP_K)
     contexts = [r.text for r in reranked] if reranked else [r.text for r in results[:3]]
 
     from config import GOOGLE_API_KEY, GEMINI_MODEL
