@@ -11,7 +11,7 @@ from src.m2_search import HybridSearch
 from src.m3_rerank import CrossEncoderReranker
 from src.m4_eval import load_test_set, evaluate_ragas, failure_analysis, save_report
 from src.m5_enrichment import enrich_chunks
-from config import RERANK_TOP_K
+from config import RERANK_TOP_K, EVAL_SAMPLE_SIZE
 
 
 def build_pipeline():
@@ -64,17 +64,18 @@ def run_query(query: str, search: HybridSearch, reranker: CrossEncoderReranker) 
     reranked = reranker.rerank(query, docs, top_k=RERANK_TOP_K)
     contexts = [r.text for r in reranked] if reranked else [r.text for r in results[:3]]
 
-    from config import OPENAI_API_KEY
-    if OPENAI_API_KEY and contexts:
+    from config import GOOGLE_API_KEY, GEMINI_MODEL
+    if GOOGLE_API_KEY and contexts:
         try:
-            from openai import OpenAI
-            client = OpenAI()
+            import google.generativeai as genai
+            genai.configure(api_key=GOOGLE_API_KEY)
+            model = genai.GenerativeModel(
+                GEMINI_MODEL,
+                system_instruction="Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'",
+            )
             context_str = "\n\n".join(contexts)
-            resp = client.chat.completions.create(model="gpt-4o-mini", messages=[
-                {"role": "system", "content": "Trả lời CHỈ dựa trên context. Nếu không có → nói 'Không tìm thấy.'"},
-                {"role": "user", "content": f"Context:\n{context_str}\n\nCâu hỏi: {query}"},
-            ])
-            answer = resp.choices[0].message.content
+            resp = model.generate_content(f"Context:\n{context_str}\n\nCâu hỏi: {query}")
+            answer = resp.text
         except Exception as e:
             print(f"  ⚠️  LLM generation failed: {e}", flush=True)
             answer = contexts[0]
@@ -85,8 +86,10 @@ def run_query(query: str, search: HybridSearch, reranker: CrossEncoderReranker) 
 
 def evaluate_pipeline(search: HybridSearch, reranker: CrossEncoderReranker):
     """Run evaluation on test set."""
-    test_set = load_test_set()
-    print(f"\n[Eval] Running {len(test_set)} queries...", flush=True)
+    full_test_set = load_test_set()
+    test_set = full_test_set[:EVAL_SAMPLE_SIZE]
+    print(f"\n[Eval] Sampling {len(test_set)}/{len(full_test_set)} queries "
+          f"(Gemini free tier: 15 RPM limits RAGAS throughput)...", flush=True)
     questions, answers, all_contexts, ground_truths = [], [], [], []
 
     for i, item in enumerate(test_set):

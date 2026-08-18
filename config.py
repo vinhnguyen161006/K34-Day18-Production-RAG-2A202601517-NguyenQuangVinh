@@ -7,6 +7,15 @@ load_dotenv()
 
 # --- API Keys ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
+GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY", "")
+
+# --- LLM (Gemini) ---
+GEMINI_MODEL = "gemini-3.5-flash-lite"
+
+# --- Evaluation ---
+# Gemini free tier limits to 15 requests/min; RAGAS scoring needs ~7 calls/question,
+# so a full 20-question test_set would take many hours. Sample a subset instead.
+EVAL_SAMPLE_SIZE = 5
 
 # --- Qdrant ---
 QDRANT_HOST = "localhost"

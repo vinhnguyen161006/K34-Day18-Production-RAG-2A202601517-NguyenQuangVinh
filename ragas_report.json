@@ -1,0 +1,26 @@
+{
+  "aggregate": {
+    "faithfulness": 0.585,
+    "answer_relevancy": 0.79,
+    "context_precision": 0.33,
+    "context_recall": 1.0
+  },
+  "num_questions": 2,
+  "note": "Chi 2/20 cau hoan tat danh gia (Naive Baseline) do gioi han Gemini free tier (15 RPM). Xem analysis/failure_analysis.md.",
+  "failures": [
+    {
+      "question": "Nhân viên được nghỉ bao nhiêu ngày khi kết hôn?",
+      "worst_metric": "context_precision",
+      "score": 0.33,
+      "diagnosis": "Too many irrelevant chunks",
+      "suggested_fix": "Add reranking or metadata filter"
+    },
+    {
+      "question": "Bảo hiểm sức khỏe PVI có hạn mức bao nhiêu cho nhân viên?",
+      "worst_metric": "context_precision",
+      "score": 0.33,
+      "diagnosis": "Too many irrelevant chunks",
+      "suggested_fix": "Add reranking or metadata filter"
+    }
+  ]
+}
